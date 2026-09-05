@@ -151,3 +151,24 @@ async def get_patterns(user_id: int = Depends(get_current_user_id), db: AsyncSes
                 tag_counter[tag] = tag_counter.get(tag, 0) + 1
 
     return {"category_counts": category_counts, "topic_tag_counts": tag_counter}
+
+@app.get("/submissions/{submission_id}")
+async def get_submission(
+    submission_id: int,
+    user_id: int = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(Submission).where(Submission.id == submission_id, Submission.user_id == user_id)
+    )
+    submission = result.scalar_one_or_none()
+    if not submission:
+        raise HTTPException(status_code=404, detail="Submission not found")
+
+    return {
+        "id": submission.id,
+        "status": submission.status,
+        "category": submission.gap_category,
+        "note": submission.gap_note,
+        "topic_tags": submission.topic_tags.split(",") if submission.topic_tags else [],
+    }
