@@ -1,6 +1,7 @@
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy import ForeignKey, DateTime, func
 import datetime
+from pgvector.sqlalchemy import Vector
 
 class Base(DeclarativeBase):
     pass
@@ -24,6 +25,7 @@ class Submission(Base):
     gap_note: Mapped[str | None] = mapped_column(default=None)
     topic_tags: Mapped[str | None] = mapped_column(default=None)
     status: Mapped[str] = mapped_column(default="pending")
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(1024), nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

@@ -107,6 +107,38 @@ async def refresh(request: Request):
 async def me(user_id: int = Depends(get_current_user_id)):
     return {"user_id": user_id}
 
+@app.post("/submissions", status_code=202)
+async def create_submission(
+    req: SubmitRequest,
+    user_id: int = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    one_hour_ago = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=1)
+    result = await db.execute(
+        select(sqlfunc.count())
+        .select_from(Submission)
+        .where(Submission.user_id == user_id, Submission.created_at >= one_hour_ago)
+    )
+    recent_count = result.scalar_one()
+
+    if recent_count >= RATE_LIMIT_PER_HOUR:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Rate limit exceeded: max {RATE_LIMIT_PER_HOUR} submissions per hour",
+        )
+
+    submission = Submission(
+        user_id=user_id,
+        problem_title=req.problem_title,
+        problem_statement=req.problem_statement,
+        wrong_code=req.wrong_code,
+        status="pending",
+    )
+    db.add(submission)
+    await db.commit()
+    await db.refresh(submission)
+    return {"id": submission.id, "status": submission.status}
+
 @app.get("/submissions")
 async def list_submissions(
     limit: int = 20,
