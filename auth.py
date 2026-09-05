@@ -3,8 +3,17 @@ import jwt
 import datetime
 import os
 
-SECRET_KEY = os.getenv("JWT_SECRET", "dev-only-change-in-production")
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
+SECRET_KEY = os.getenv("JWT_SECRET")
 ALGORITHM = "HS256"
+
+if SECRET_KEY is None:
+    if ENVIRONMENT == "production":
+        raise RuntimeError(
+            "JWT_SECRET environment variable must be set in production. "
+            "Refusing to start with no secret configured."
+        )
+    SECRET_KEY = "dev-only-change-in-production"
 
 password_hash = PasswordHash.recommended()
 
