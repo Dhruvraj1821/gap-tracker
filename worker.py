@@ -1,6 +1,7 @@
 from dotenv import load_dotenv
 load_dotenv()
 
+from embeddings import embed_submission
 import asyncio
 from database import AsyncSessionLocal
 from models import Submission
@@ -36,6 +37,11 @@ async def process_one_submission() -> bool:
             submission.gap_category = analysis["category"]
             submission.gap_note = analysis["note"]
             submission.topic_tags = ",".join(analysis.get("topic_tags", []))
+
+            submission.embedding = embed_submission(
+                submission.problem_title, submission.problem_statement, submission.wrong_code
+            )
+
             submission.status = "complete"
         except Exception as e:
             print(f"Submission {submission.id} failed: {e}")
