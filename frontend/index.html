@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head><title>Gap Tracker - Login</title></head>
+<body>
+  <h1>Login</h1>
+  <input id="email" placeholder="Email">
+  <input id="password" type="password" placeholder="Password">
+  <button onclick="login()">Login</button>
+  <button onclick="signup()">Sign up</button>
+  <p id="message"></p>
+
+  <script>
+    const API_BASE = "http://127.0.0.1:8000";
+
+    async function signup() {
+      const res = await fetch(`${API_BASE}/signup`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: document.getElementById("email").value,
+          password: document.getElementById("password").value,
+        }),
+      });
+      document.getElementById("message").innerText = res.ok ? "Signed up, now log in" : "Signup failed";
+    }
+
+    async function login() {
+      const res = await fetch(`${API_BASE}/login`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: document.getElementById("email").value,
+          password: document.getElementById("password").value,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        sessionStorage.setItem("access_token", data.access_token);
+        window.location.href = "submit.html";
+      } else {
+        document.getElementById("message").innerText = "Login failed";
+      }
+    }
+  </script>
+</body>
+</html>
