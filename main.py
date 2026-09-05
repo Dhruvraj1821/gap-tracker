@@ -14,8 +14,11 @@ from llm_analysis import analyze_gap
 from models import Submission
 from sqlalchemy import func as sqlfunc
 from fastapi.middleware.cors import CORSMiddleware
+import datetime
 
 app = FastAPI()
+
+RATE_LIMIT_PER_HOUR = 10
 
 app.add_middleware(
     CORSMiddleware,
@@ -101,6 +104,20 @@ async def create_submission(
     user_id: int = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
+    one_hour_ago = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=1)
+    result = await db.execute(
+        select(sqlfunc.count())
+        .select_from(Submission)
+        .where(Submission.user_id == user_id, Submission.created_at >= one_hour_ago)
+    )
+    recent_count = result.scalar_one()
+
+    if recent_count >= RATE_LIMIT_PER_HOUR:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Rate limit exceeded: max {RATE_LIMIT_PER_HOUR} submissions per hour",
+        )
+
     submission = Submission(
         user_id=user_id,
         problem_title=req.problem_title,
