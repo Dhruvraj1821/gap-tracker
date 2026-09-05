@@ -22,5 +22,6 @@ class Submission(Base):
     correct_code: Mapped[str | None] = mapped_column(default=None)
     gap_category: Mapped[str | None] = mapped_column(default=None)
     gap_note: Mapped[str | None] = mapped_column(default=None)
-    topic_tags: Mapped[str | None] = mapped_column(default=None)  # comma-separated, kept simple for MVP
+    topic_tags: Mapped[str | None] = mapped_column(default=None)
+    status: Mapped[str] = mapped_column(default="pending")
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
