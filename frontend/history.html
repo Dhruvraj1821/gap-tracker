@@ -1,34 +1,28 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Gap Tracker - History</title>
-  <style>
-    .entry { border: 1px solid #ccc; padding: 1em; margin-bottom: 1em; border-radius: 4px; }
-    .entry-title { font-weight: bold; }
-    .status-pending, .status-processing { color: #b8860b; }
-    .status-failed { color: #c0392b; }
-    .status-complete { color: #2e7d32; }
-  </style>
+  <title>Gap Tracker — History</title>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <h1>Submission History</h1>
-  <div id="entries">Loading...</div>
+  <nav>
+    <a href="submit.html">Log a mistake</a>
+    <a href="history.html">History</a>
+    <a href="dashboard.html">Patterns</a>
+  </nav>
+
+  <h1>History</h1>
+  <div id="entries" class="status-text">Loading...</div>
 
   <script>
     const API_BASE = "http://127.0.0.1:8000";
     const token = sessionStorage.getItem("access_token");
-
-    if (!token) {
-      window.location.href = "index.html";
-    }
+    if (!token) window.location.href = "index.html";
 
     async function loadHistory() {
-      const res = await fetch(`${API_BASE}/submissions?limit=20&offset=0`, {
-        headers: { "Authorization": `Bearer ${token}` },
-      });
-
+      const res = await fetch(`${API_BASE}/submissions?limit=20&offset=0`, { headers: { "Authorization": `Bearer ${token}` } });
       if (res.status === 401) {
-        document.getElementById("entries").innerText = "Session expired, please log in again.";
+        document.getElementById("entries").innerText = "Your session expired. Log in again.";
         sessionStorage.removeItem("access_token");
         return;
       }
@@ -37,18 +31,18 @@
       const container = document.getElementById("entries");
 
       if (submissions.length === 0) {
-        container.innerText = "No submissions yet.";
+        container.innerText = "No submissions yet — log your first mistake.";
         return;
       }
 
       container.innerHTML = submissions.map(s => `
-        <div class="entry">
-          <div class="entry-title">${s.problem_title} — <span class="status-${s.status}">${s.status}</span></div>
-          <p>${new Date(s.created_at).toLocaleString()}</p>
+        <div class="entry status-${s.status}">
+          <div class="entry-title">${s.problem_title}</div>
+          <div class="entry-meta">${new Date(s.created_at).toLocaleString()} · ${s.status}</div>
           ${s.status === "complete" ? `
-            <p><strong>Category:</strong> ${s.category}</p>
-            <p><strong>Note:</strong> ${s.note}</p>
-            <p><strong>Tags:</strong> ${s.topic_tags.join(", ")}</p>
+            <p class="entry-field"><strong>Category:</strong> ${s.category}</p>
+            <p class="entry-field"><strong>Note:</strong> ${s.note}</p>
+            <p class="entry-field">${s.topic_tags.map(t => `<span class="tag">${t}</span>`).join(" ")}</p>
           ` : ""}
         </div>
       `).join("");

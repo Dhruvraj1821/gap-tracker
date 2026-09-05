@@ -1,13 +1,24 @@
 <!DOCTYPE html>
 <html>
-<head><title>Gap Tracker - Login</title></head>
+<head>
+  <title>Gap Tracker</title>
+  <link rel="stylesheet" href="style.css">
+</head>
 <body>
-  <h1>Login</h1>
-  <input id="email" placeholder="Email">
-  <input id="password" type="password" placeholder="Password">
-  <button onclick="login()">Login</button>
-  <button onclick="signup()">Sign up</button>
-  <p id="message"></p>
+  <h1>Gap Tracker</h1>
+  <p class="status-text" style="margin-bottom: 2rem;">Log in or create an account to start tracking your DSA mistakes.</p>
+
+  <label for="email">Email</label>
+  <input id="email" type="email" placeholder="you@example.com">
+
+  <label for="password">Password</label>
+  <input id="password" type="password" placeholder="At least 8 characters">
+
+  <div style="display: flex; gap: 0.6rem;">
+    <button onclick="login()">Log in</button>
+    <button onclick="signup()" style="background: transparent; color: var(--accent); border: 1px solid var(--line);">Sign up</button>
+  </div>
+  <p id="message" class="status-text" style="margin-top: 1rem;"></p>
 
   <script>
     const API_BASE = "http://127.0.0.1:8000";
@@ -21,7 +32,7 @@
           password: document.getElementById("password").value,
         }),
       });
-      document.getElementById("message").innerText = res.ok ? "Signed up, now log in" : "Signup failed";
+      document.getElementById("message").innerText = res.ok ? "Account created. Log in below." : "Couldn't sign up — that email may already be registered.";
     }
 
     async function login() {
@@ -39,7 +50,7 @@
         sessionStorage.setItem("access_token", data.access_token);
         window.location.href = "submit.html";
       } else {
-        document.getElementById("message").innerText = "Login failed";
+        document.getElementById("message").innerText = "Login failed — check your email and password.";
       }
     }
   </script>

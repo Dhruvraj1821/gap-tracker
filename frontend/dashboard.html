@@ -1,89 +1,58 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Gap Tracker - Dashboard</title>
-  <style>
-  .bar-row {
-    display: flex;
-    align-items: center;
-    margin-bottom: 10px;
-    gap: 10px;
-  }
-  .bar-label {
-    flex: 0 0 160px;
-    text-align: right;
-    word-break: break-word;
-  }
-  .bar-outer {
-    flex: 1;
-    max-width: 300px;
-    background: #eee;
-    height: 22px;
-    border-radius: 3px;
-    overflow: hidden;
-  }
-  .bar-inner {
-    height: 100%;
-    background: #4a90d9;
-    color: white;
-    padding: 0 6px;
-    box-sizing: border-box;
-    white-space: nowrap;
-    display: flex;
-    align-items: center;
-    font-size: 0.85em;
-  }
-</style>
+  <title>Gap Tracker — Patterns</title>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <h1>Your Gap Patterns</h1>
+  <nav>
+    <a href="submit.html">Log a mistake</a>
+    <a href="history.html">History</a>
+    <a href="dashboard.html">Patterns</a>
+  </nav>
 
-  <h3>By category</h3>
+  <h1>Your patterns</h1>
+
+  <h2>By category</h2>
   <div id="category-bars"></div>
 
-  <h3>By topic tag</h3>
+  <h2>By topic</h2>
   <div id="tag-bars"></div>
 
-  <p id="status"></p>
+  <p id="status" class="status-text"></p>
 
   <script>
     const API_BASE = "http://127.0.0.1:8000";
     const token = sessionStorage.getItem("access_token");
-
-    if (!token) {
-      window.location.href = "index.html";
-    }
+    if (!token) window.location.href = "index.html";
 
     function renderBars(containerId, counts) {
-  const container = document.getElementById(containerId);
-  const entries = Object.entries(counts);
-  if (entries.length === 0) {
-    container.innerText = "No data yet.";
-    return;
-  }
-  const max = Math.max(...entries.map(([, count]) => count));
-  container.innerHTML = entries
-    .sort((a, b) => b[1] - a[1])
-    .map(([label, count]) => {
-      const pct = Math.round((count / max) * 100);
-      return `<div class="bar-row">
-        <span class="bar-label">${label}</span>
-        <span class="bar-outer"><span class="bar-inner" style="width:${pct}%">${count}</span></span>
-      </div>`;
-    })
-    .join("");
-}
+      const container = document.getElementById(containerId);
+      const entries = Object.entries(counts);
+      if (entries.length === 0) {
+        container.innerHTML = '<p class="status-text">No data yet.</p>';
+        return;
+      }
+      const max = Math.max(...entries.map(([, count]) => count));
+      container.innerHTML = entries
+        .sort((a, b) => b[1] - a[1])
+        .map(([label, count]) => {
+          const pct = Math.round((count / max) * 100);
+          return `<div class="bar-row">
+            <span class="bar-label">${label}</span>
+            <span class="bar-outer"><span class="bar-inner" style="width:${pct}%">${count}</span></span>
+          </div>`;
+        }).join("");
+    }
 
     async function loadPatterns() {
-      const res = await fetch(`${API_BASE}/patterns`, {
-        headers: { "Authorization": `Bearer ${token}` },
-      });
+      const res = await fetch(`${API_BASE}/patterns`, { headers: { "Authorization": `Bearer ${token}` } });
       if (res.ok) {
         const data = await res.json();
         renderBars("category-bars", data.category_counts);
         renderBars("tag-bars", data.topic_tag_counts);
       } else if (res.status === 401) {
-        document.getElementById("status").innerText = "Session expired, please log in again.";
+        document.getElementById("status").innerText = "Your session expired. Log in again.";
         sessionStorage.removeItem("access_token");
       }
     }

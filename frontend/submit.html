@@ -1,30 +1,44 @@
 <!DOCTYPE html>
 <html>
-<head><title>Gap Tracker - Submit</title></head>
+<head>
+  <title>Gap Tracker — Submit</title>
+  <link rel="stylesheet" href="style.css">
+</head>
 <body>
-  <h1>Log a wrong attempt</h1>
-  <input id="title" placeholder="Problem title"><br><br>
-  <textarea id="statement" placeholder="Problem statement" rows="4" cols="60"></textarea><br><br>
-  <textarea id="code" placeholder="Your wrong code" rows="10" cols="60"></textarea><br><br>
-  <button id="submit-btn" onclick="submitAttempt()">Analyze</button>
-  <p id="status"></p>
+  <nav>
+    <a href="submit.html">Log a mistake</a>
+    <a href="history.html">History</a>
+    <a href="dashboard.html">Patterns</a>
+  </nav>
 
-  <div id="result" style="display:none; border:1px solid #ccc; padding:1em; margin-top:1em;">
-    <h3>Diagnosis</h3>
-    <p><strong>Category:</strong> <span id="result-category"></span></p>
-    <p><strong>Note:</strong> <span id="result-note"></span></p>
-    <p><strong>Tags:</strong> <span id="result-tags"></span></p>
+  <h1>Log a wrong attempt</h1>
+
+  <label for="title">Problem title</label>
+  <input id="title" placeholder="Two Sum">
+
+  <label for="statement">Problem statement</label>
+  <textarea id="statement" rows="3" placeholder="Given an array of integers..."></textarea>
+
+  <label for="code">Your code</label>
+  <textarea id="code" rows="10" placeholder="def solve(...):"></textarea>
+
+  <button id="submit-btn" onclick="submitAttempt()">Analyze</button>
+  <p id="status" class="status-text" style="margin-top: 1rem;"></p>
+
+  <div id="result" class="entry status-complete" style="display:none; margin-top: 1.5rem;">
+    <h2 style="font-size: 1rem; margin-bottom: 0.6rem;">Diagnosis</h2>
+    <p class="entry-field"><strong>Category:</strong> <span id="result-category"></span></p>
+    <p class="entry-field"><strong>Note:</strong> <span id="result-note"></span></p>
+    <p class="entry-field" id="result-tags-wrap"><strong>Tags:</strong> <span id="result-tags"></span></p>
   </div>
 
   <script>
     const API_BASE = "http://127.0.0.1:8000";
     const token = sessionStorage.getItem("access_token");
     const POLL_INTERVAL_MS = 2000;
-    const MAX_POLL_ATTEMPTS = 30; // ~60 seconds before giving up
+    const MAX_POLL_ATTEMPTS = 30;
 
-    if (!token) {
-      window.location.href = "index.html";
-    }
+    if (!token) window.location.href = "index.html";
 
     function setButtonDisabled(disabled) {
       document.getElementById("submit-btn").disabled = disabled;
@@ -34,13 +48,11 @@
       let attempts = 0;
       const intervalId = setInterval(async () => {
         attempts++;
-        const res = await fetch(`${API_BASE}/submissions/${id}`, {
-          headers: { "Authorization": `Bearer ${token}` },
-        });
+        const res = await fetch(`${API_BASE}/submissions/${id}`, { headers: { "Authorization": `Bearer ${token}` } });
 
         if (res.status === 401) {
           clearInterval(intervalId);
-          document.getElementById("status").innerText = "Session expired, please log in again.";
+          document.getElementById("status").innerText = "Your session expired. Log in again.";
           sessionStorage.removeItem("access_token");
           setButtonDisabled(false);
           return;
@@ -53,19 +65,20 @@
           document.getElementById("status").innerText = "";
           document.getElementById("result-category").innerText = data.category;
           document.getElementById("result-note").innerText = data.note;
-          document.getElementById("result-tags").innerText = data.topic_tags.join(", ");
+          const tags = data.topic_tags.map(t => `<span class="tag">${t}</span>`).join(" ");
+          document.getElementById("result-tags").innerHTML = tags;
           document.getElementById("result").style.display = "block";
           setButtonDisabled(false);
         } else if (data.status === "failed") {
           clearInterval(intervalId);
-          document.getElementById("status").innerText = "Analysis failed — you can try submitting again.";
+          document.getElementById("status").innerText = "Analysis failed — try submitting again.";
           setButtonDisabled(false);
         } else if (attempts >= MAX_POLL_ATTEMPTS) {
           clearInterval(intervalId);
-          document.getElementById("status").innerText = "Still processing — check back later.";
+          document.getElementById("status").innerText = "Still processing — check History shortly.";
           setButtonDisabled(false);
         } else {
-          document.getElementById("status").innerText = `Analyzing... (${data.status})`;
+          document.getElementById("status").innerText = "Analyzing...";
         }
       }, POLL_INTERVAL_MS);
     }
@@ -77,10 +90,7 @@
 
       const res = await fetch(`${API_BASE}/submissions`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`,
-        },
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
         body: JSON.stringify({
           problem_title: document.getElementById("title").value,
           problem_statement: document.getElementById("statement").value,
@@ -93,14 +103,14 @@
         document.getElementById("status").innerText = "Analyzing...";
         pollSubmission(data.id);
       } else if (res.status === 429) {
-        document.getElementById("status").innerText = "Rate limit reached — try again later.";
+        document.getElementById("status").innerText = "You've hit the hourly submission limit — try again later.";
         setButtonDisabled(false);
       } else if (res.status === 401) {
-        document.getElementById("status").innerText = "Session expired, please log in again.";
+        document.getElementById("status").innerText = "Your session expired. Log in again.";
         sessionStorage.removeItem("access_token");
         setButtonDisabled(false);
       } else {
-        document.getElementById("status").innerText = "Submission failed.";
+        document.getElementById("status").innerText = "Couldn't submit — try again.";
         setButtonDisabled(false);
       }
     }
