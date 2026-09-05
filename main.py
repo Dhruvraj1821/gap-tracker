@@ -15,6 +15,9 @@ from models import Submission
 from sqlalchemy import func as sqlfunc
 from fastapi.middleware.cors import CORSMiddleware
 import datetime
+import os
+
+IS_PRODUCTION = os.getenv("ENVIRONMENT", "development") == "production"
 
 app = FastAPI()
 
@@ -73,8 +76,8 @@ async def login(req: LoginRequest, response: Response, db: AsyncSession = Depend
         key="refresh_token",
         value=refresh_token,
         httponly=True,
-        secure=True,
-        samesite="strict",
+        secure=IS_PRODUCTION,
+        samesite="strict" if IS_PRODUCTION else "lax",
         max_age=7 * 24 * 60 * 60,
     )
     return {"access_token": access_token}
