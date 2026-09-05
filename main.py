@@ -31,6 +31,9 @@ class SubmitRequest(BaseModel):
     problem_statement: str
     wrong_code: str
 
+class AddCorrectSolutionRequest(BaseModel):
+    correct_code: str
+
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
@@ -112,3 +115,23 @@ async def create_submission(
         "topic_tags": analysis.get("topic_tags", []),
     }
 
+@app.patch("/submissions/{submission_id}/correct-solution")
+async def add_correct_solution(
+    submission_id: int,
+    req: AddCorrectSolutionRequest,
+    user_id: int = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(Submission).where(Submission.id == submission_id, Submission.user_id == user_id))
+    submission = result.scalar_one_or_none()
+    if not submission:
+        raise HTTPException(status_code=404, detail="Submission not found")
+
+    submission.correct_code = req.correct_code
+    analysis = analyze_gap(submission.problem_title, submission.problem_statement, submission.wrong_code, req.correct_code)
+    submission.gap_category = analysis["category"]
+    submission.gap_note = analysis["note"]
+    submission.topic_tags = ",".join(analysis.get("topic_tags", []))
+
+    await db.commit()
+    return {"message": "re-analyzed", "category": submission.gap_category, "note": submission.gap_note}
