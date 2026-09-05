@@ -16,6 +16,7 @@ from sqlalchemy import func as sqlfunc
 from fastapi.middleware.cors import CORSMiddleware
 import datetime
 import os
+from sqlalchemy.exc import IntegrityError
 
 IS_PRODUCTION = os.getenv("ENVIRONMENT", "development") == "production"
 
@@ -59,7 +60,12 @@ async def signup(req: SignupRequest, db: AsyncSession = Depends(get_db)):
 
     user = User(email=req.email, hashed_password=hash_password(req.password))
     db.add(user)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail="Email already registered")
+
     return {"message": "signup successful"}
 
 @app.post("/login")
