@@ -1,12 +1,13 @@
 from fastapi import FastAPI
-from fastapi import Depends, HTTPException, Response
+from fastapi import Depends, HTTPException, Response, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel, EmailStr
-from dependencies import get_db
+from dependencies import get_db, get_current_user_id
 from models import User
-from auth import hash_password, create_access_token, create_refresh_token, verify_password
+from auth import hash_password, create_access_token, create_refresh_token, verify_password, decode_token
 from dotenv import load_dotenv
+import jwt
 
 load_dotenv()
 
@@ -55,3 +56,22 @@ async def login(req: LoginRequest, response: Response, db: AsyncSession = Depend
         max_age=7 * 24 * 60 * 60,
     )
     return {"access_token": access_token}
+
+@app.post("/refresh")
+async def refresh(request: Request):
+    refresh_token = request.cookies.get("refresh_token")
+    if not refresh_token:
+        raise HTTPException(status_code=401, detail="No refresh token")
+    try:
+        payload = decode_token(refresh_token)
+        if payload.get("type") != "refresh":
+            raise HTTPException(status_code=401, detail="Invalid token type")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+    new_access_token = create_access_token(int(payload["sub"]))
+    return {"access_token": new_access_token}
+
+@app.get("/me")
+async def me(user_id: int = Depends(get_current_user_id)):
+    return {"user_id": user_id}
