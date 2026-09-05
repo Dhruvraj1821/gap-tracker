@@ -1,3 +1,6 @@
+from dotenv import load_dotenv
+load_dotenv()
+
 from fastapi import FastAPI
 from fastapi import Depends, HTTPException, Response, Request
 from sqlalchemy import select
@@ -6,10 +9,11 @@ from pydantic import BaseModel, EmailStr
 from dependencies import get_db, get_current_user_id
 from models import User
 from auth import hash_password, create_access_token, create_refresh_token, verify_password, decode_token
-from dotenv import load_dotenv
 import jwt
+from llm_analysis import analyze_gap
+from models import Submission
 
-load_dotenv()
+
 
 
 app = FastAPI()
@@ -21,6 +25,11 @@ class SignupRequest(BaseModel):
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
+
+class SubmitRequest(BaseModel):
+    problem_title: str
+    problem_statement: str
+    wrong_code: str
 
 @app.get("/health")
 def health_check():
@@ -75,3 +84,31 @@ async def refresh(request: Request):
 @app.get("/me")
 async def me(user_id: int = Depends(get_current_user_id)):
     return {"user_id": user_id}
+
+@app.post("/submissions")
+async def create_submission(
+    req: SubmitRequest,
+    user_id: int = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    analysis = analyze_gap(req.problem_title, req.problem_statement, req.wrong_code, None)
+
+    submission = Submission(
+        user_id=user_id,
+        problem_title=req.problem_title,
+        problem_statement=req.problem_statement,
+        wrong_code=req.wrong_code,
+        gap_category=analysis["category"],
+        gap_note=analysis["note"],
+        topic_tags=",".join(analysis.get("topic_tags", [])),
+    )
+    db.add(submission)
+    await db.commit()
+    await db.refresh(submission)
+    return {
+        "id": submission.id,
+        "category": submission.gap_category,
+        "note": submission.gap_note,
+        "topic_tags": analysis.get("topic_tags", []),
+    }
+
