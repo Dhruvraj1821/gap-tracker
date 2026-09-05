@@ -1,6 +1,7 @@
 import os
 import json
 from groq import Groq
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
@@ -14,6 +15,24 @@ Respond with ONLY a JSON object, no other text, in this exact shape:
 }
 
 Be specific to THIS code and THIS mistake. Avoid generic advice like "be more careful with edge cases" — name the exact edge case they missed and why their code's structure caused them to miss it."""
+
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=1, max=10),
+    retry=retry_if_exception_type(Exception),
+    reraise=True,
+)
+def _call_groq(user_message: str) -> str:
+    response = client.chat.completions.create(
+        model="openai/gpt-oss-120b",
+        max_tokens=500,
+        response_format={"type": "json_object"},
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_message},
+        ],
+    )
+    return response.choices[0].message.content
 
 def analyze_gap(problem_title: str, problem_statement: str, wrong_code: str, correct_code: str | None) -> dict:
     if correct_code:
@@ -31,16 +50,7 @@ Student's submitted code:
 
 Analyze the gap."""
 
-    response = client.chat.completions.create(
-        model="openai/gpt-oss-120b",
-        max_tokens=500,
-        response_format={"type": "json_object"},
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_message},
-        ],
-    )
-    raw_text = response.choices[0].message.content
+    raw_text = _call_groq(user_message)
     try:
         return json.loads(raw_text)
     except json.JSONDecodeError:
