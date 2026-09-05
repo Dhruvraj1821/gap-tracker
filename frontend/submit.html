@@ -6,7 +6,7 @@
   <input id="title" placeholder="Problem title"><br><br>
   <textarea id="statement" placeholder="Problem statement" rows="4" cols="60"></textarea><br><br>
   <textarea id="code" placeholder="Your wrong code" rows="10" cols="60"></textarea><br><br>
-  <button onclick="submitAttempt()">Analyze</button>
+  <button id="submit-btn" onclick="submitAttempt()">Analyze</button>
   <p id="status"></p>
 
   <div id="result" style="display:none; border:1px solid #ccc; padding:1em; margin-top:1em;">
@@ -19,13 +19,62 @@
   <script>
     const API_BASE = "http://127.0.0.1:8000";
     const token = sessionStorage.getItem("access_token");
+    const POLL_INTERVAL_MS = 2000;
+    const MAX_POLL_ATTEMPTS = 30; // ~60 seconds before giving up
 
     if (!token) {
       window.location.href = "index.html";
     }
 
+    function setButtonDisabled(disabled) {
+      document.getElementById("submit-btn").disabled = disabled;
+    }
+
+    function pollSubmission(id) {
+      let attempts = 0;
+      const intervalId = setInterval(async () => {
+        attempts++;
+        const res = await fetch(`${API_BASE}/submissions/${id}`, {
+          headers: { "Authorization": `Bearer ${token}` },
+        });
+
+        if (res.status === 401) {
+          clearInterval(intervalId);
+          document.getElementById("status").innerText = "Session expired, please log in again.";
+          sessionStorage.removeItem("access_token");
+          setButtonDisabled(false);
+          return;
+        }
+
+        const data = await res.json();
+
+        if (data.status === "complete") {
+          clearInterval(intervalId);
+          document.getElementById("status").innerText = "";
+          document.getElementById("result-category").innerText = data.category;
+          document.getElementById("result-note").innerText = data.note;
+          document.getElementById("result-tags").innerText = data.topic_tags.join(", ");
+          document.getElementById("result").style.display = "block";
+          setButtonDisabled(false);
+        } else if (data.status === "failed") {
+          clearInterval(intervalId);
+          document.getElementById("status").innerText = "Analysis failed — you can try submitting again.";
+          setButtonDisabled(false);
+        } else if (attempts >= MAX_POLL_ATTEMPTS) {
+          clearInterval(intervalId);
+          document.getElementById("status").innerText = "Still processing — check back later.";
+          setButtonDisabled(false);
+        } else {
+          document.getElementById("status").innerText = `Analyzing... (${data.status})`;
+        }
+      }, POLL_INTERVAL_MS);
+    }
+
     async function submitAttempt() {
-      document.getElementById("status").innerText = "Analyzing...";
+      setButtonDisabled(true);
+      document.getElementById("result").style.display = "none";
+      document.getElementById("status").innerText = "Submitting...";
+
       const res = await fetch(`${API_BASE}/submissions`, {
         method: "POST",
         headers: {
@@ -39,18 +88,20 @@
         }),
       });
 
-      if (res.ok) {
+      if (res.status === 202) {
         const data = await res.json();
-        document.getElementById("status").innerText = "";
-        document.getElementById("result-category").innerText = data.category;
-        document.getElementById("result-note").innerText = data.note;
-        document.getElementById("result-tags").innerText = data.topic_tags.join(", ");
-        document.getElementById("result").style.display = "block";
+        document.getElementById("status").innerText = "Analyzing...";
+        pollSubmission(data.id);
+      } else if (res.status === 429) {
+        document.getElementById("status").innerText = "Rate limit reached — try again later.";
+        setButtonDisabled(false);
       } else if (res.status === 401) {
         document.getElementById("status").innerText = "Session expired, please log in again.";
         sessionStorage.removeItem("access_token");
+        setButtonDisabled(false);
       } else {
         document.getElementById("status").innerText = "Submission failed.";
+        setButtonDisabled(false);
       }
     }
   </script>
