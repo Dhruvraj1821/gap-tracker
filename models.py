@@ -25,3 +25,6 @@ class Submission(Base):
     topic_tags: Mapped[str | None] = mapped_column(default=None)
     status: Mapped[str] = mapped_column(default="pending")
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
