@@ -12,6 +12,7 @@ from auth import hash_password, create_access_token, create_refresh_token, verif
 import jwt
 from llm_analysis import analyze_gap
 from models import Submission
+from sqlalchemy import func as sqlfunc
 
 
 
@@ -135,3 +136,21 @@ async def add_correct_solution(
 
     await db.commit()
     return {"message": "re-analyzed", "category": submission.gap_category, "note": submission.gap_note}
+
+@app.get("/patterns")
+async def get_patterns(user_id: int = Depends(get_current_user_id), db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(Submission.gap_category, sqlfunc.count())
+        .where(Submission.user_id == user_id)
+        .group_by(Submission.gap_category)
+    )
+    category_counts = {row[0]: row[1] for row in result.all()}
+
+    tag_result = await db.execute(select(Submission.topic_tags).where(Submission.user_id == user_id))
+    tag_counter = {}
+    for (tags_str,) in tag_result.all():
+        if tags_str:
+            for tag in tags_str.split(","):
+                tag_counter[tag] = tag_counter.get(tag, 0) + 1
+
+    return {"category_counts": category_counts, "topic_tag_counts": tag_counter}
