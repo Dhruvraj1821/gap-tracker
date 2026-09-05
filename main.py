@@ -98,37 +98,33 @@ async def refresh(request: Request):
 async def me(user_id: int = Depends(get_current_user_id)):
     return {"user_id": user_id}
 
-@app.post("/submissions", status_code=202)
-async def create_submission(
-    req: SubmitRequest,
+@app.get("/submissions")
+async def list_submissions(
+    limit: int = 20,
+    offset: int = 0,
     user_id: int = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
-    one_hour_ago = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=1)
     result = await db.execute(
-        select(sqlfunc.count())
-        .select_from(Submission)
-        .where(Submission.user_id == user_id, Submission.created_at >= one_hour_ago)
+        select(Submission)
+        .where(Submission.user_id == user_id)
+        .order_by(Submission.created_at.desc())
+        .limit(limit)
+        .offset(offset)
     )
-    recent_count = result.scalar_one()
-
-    if recent_count >= RATE_LIMIT_PER_HOUR:
-        raise HTTPException(
-            status_code=429,
-            detail=f"Rate limit exceeded: max {RATE_LIMIT_PER_HOUR} submissions per hour",
-        )
-
-    submission = Submission(
-        user_id=user_id,
-        problem_title=req.problem_title,
-        problem_statement=req.problem_statement,
-        wrong_code=req.wrong_code,
-        status="pending",
-    )
-    db.add(submission)
-    await db.commit()
-    await db.refresh(submission)
-    return {"id": submission.id, "status": submission.status}
+    submissions = result.scalars().all()
+    return [
+        {
+            "id": s.id,
+            "problem_title": s.problem_title,
+            "status": s.status,
+            "category": s.gap_category,
+            "note": s.gap_note,
+            "topic_tags": s.topic_tags.split(",") if s.topic_tags else [],
+            "created_at": s.created_at.isoformat(),
+        }
+        for s in submissions
+    ]
 
 @app.patch("/submissions/{submission_id}/correct-solution")
 async def add_correct_solution(

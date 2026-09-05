@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Gap Tracker - History</title>
+  <style>
+    .entry { border: 1px solid #ccc; padding: 1em; margin-bottom: 1em; border-radius: 4px; }
+    .entry-title { font-weight: bold; }
+    .status-pending, .status-processing { color: #b8860b; }
+    .status-failed { color: #c0392b; }
+    .status-complete { color: #2e7d32; }
+  </style>
+</head>
+<body>
+  <h1>Submission History</h1>
+  <div id="entries">Loading...</div>
+
+  <script>
+    const API_BASE = "http://127.0.0.1:8000";
+    const token = sessionStorage.getItem("access_token");
+
+    if (!token) {
+      window.location.href = "index.html";
+    }
+
+    async function loadHistory() {
+      const res = await fetch(`${API_BASE}/submissions?limit=20&offset=0`, {
+        headers: { "Authorization": `Bearer ${token}` },
+      });
+
+      if (res.status === 401) {
+        document.getElementById("entries").innerText = "Session expired, please log in again.";
+        sessionStorage.removeItem("access_token");
+        return;
+      }
+
+      const submissions = await res.json();
+      const container = document.getElementById("entries");
+
+      if (submissions.length === 0) {
+        container.innerText = "No submissions yet.";
+        return;
+      }
+
+      container.innerHTML = submissions.map(s => `
+        <div class="entry">
+          <div class="entry-title">${s.problem_title} — <span class="status-${s.status}">${s.status}</span></div>
+          <p>${new Date(s.created_at).toLocaleString()}</p>
+          ${s.status === "complete" ? `
+            <p><strong>Category:</strong> ${s.category}</p>
+            <p><strong>Note:</strong> ${s.note}</p>
+            <p><strong>Tags:</strong> ${s.topic_tags.join(", ")}</p>
+          ` : ""}
+        </div>
+      `).join("");
+    }
+
+    loadHistory();
+  </script>
+</body>
+</html>
