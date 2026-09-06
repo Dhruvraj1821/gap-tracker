@@ -2,6 +2,11 @@
 
 A backend service that diagnoses the *reasoning gap* behind a wrong DSA solution, not just the bug. A user submits a problem and their incorrect code, an LLM analyzes the underlying misconception (not the syntax error), and the system tracks recurring gaps over time and across problems using embedding-based similarity search.
 
+**Live app:** https://gap-tracker-frontend.onrender.com
+**API:** https://gap-tracker.onrender.com
+
+Both are hosted on Render's free tier, which spins down after a period of inactivity. The first request after idle time will take 20-30 seconds to respond while the service cold-starts; subsequent requests are fast. This is a known, accepted limitation of the free tier, not a bug.
+
 ## Table of contents
 
 - [Problem statement](#problem-statement)
@@ -10,6 +15,7 @@ A backend service that diagnoses the *reasoning gap* behind a wrong DSA solution
 - [Data model](#data-model)
 - [API reference](#api-reference)
 - [Design decisions and tradeoffs](#design-decisions-and-tradeoffs)
+- [Deployment](#deployment)
 - [Known limitations](#known-limitations)
 - [Local setup](#local-setup)
 - [Environment variables](#environment-variables)
@@ -24,7 +30,7 @@ Most DSA practice tools tell you *that* your solution is wrong. They rarely tell
 ```
                      ┌─────────────┐
    Browser  ───────► │  FastAPI    │ ───────► Postgres (users, submissions)
-  (plain HTML/JS)     │  API server │
+  (plain HTML/JS)     │  API server │          hosted on Supabase, pgvector enabled
                      └─────────────┘
                             │
                             │ writes row, status=pending
@@ -42,14 +48,14 @@ Most DSA practice tools tell you *that* your solution is wrong. They rarely tell
                      └─────────────┘
 ```
 
-Two separate processes: the API server (`main.py`, run via `uvicorn`) handles requests and never blocks on external calls. A background worker (`worker.py`, run as its own process) polls for pending work and does everything slow: generating embeddings, running similarity search, and calling the LLM. They communicate only through Postgres, no message broker.
+Two separate processes: the API server (`main.py`, run via `uvicorn`) handles requests and never blocks on external calls. A background worker (`worker.py`, run as its own process) polls for pending work and does everything slow: generating embeddings, running similarity search, and calling the LLM. They communicate only through Postgres, no message broker. In production, the API and worker are deployed as two separate Render services, and Postgres is hosted separately on Supabase; all three communicate over the network rather than sharing a machine.
 
 ## Tech stack and why
 
 | Component | Choice | Why |
 |---|---|---|
 | API framework | FastAPI (async) | Async request handling matters because the LLM/embedding calls this system depends on are slow (seconds, not milliseconds); a sync framework would block the whole server on one slow request. |
-| Database | PostgreSQL 16 + pgvector extension | Relational data (users, submissions) and vector similarity search in one database, no separate vector store needed. |
+| Database | PostgreSQL 16 + pgvector extension, hosted on Supabase | Relational data (users, submissions) and vector similarity search in one database, no separate vector store needed. Supabase specifically chosen for a durable free tier and pgvector enabled by default; see the deployment section for a real connectivity gotcha this introduced. |
 | ORM | SQLAlchemy 2.0 (async, `Mapped`/`mapped_column`) | Type-checked models, async session support matching the rest of the stack. |
 | Migrations | Alembic | Schema changes tracked and reproducible from a clean database. |
 | Password hashing | pwdlib (Argon2) | `passlib`, the older standard, is unmaintained and breaks on current Python. pwdlib is FastAPI's current recommended replacement. |
@@ -59,6 +65,7 @@ Two separate processes: the API server (`main.py`, run via `uvicorn`) handles re
 | Background processing | Postgres-as-queue (`SELECT ... FOR UPDATE SKIP LOCKED`) | No Redis, no message broker. See [Design decisions](#design-decisions-and-tradeoffs). |
 | Retry logic | tenacity (exponential backoff) | Wraps the Groq call; transient failures get retried instead of immediately failing the submission. |
 | Frontend | Plain HTML/CSS/JS, no framework | Scope of the project is backend systems design; the frontend exists to demonstrate the API, not to showcase frontend engineering. |
+| Hosting | Render (API service + worker service), Supabase (database), Render Static Site (frontend) | Three free-tier providers, no shared infrastructure between them, chosen independently for each piece's specific needs. |
 
 ## Data model
 
@@ -150,7 +157,7 @@ The original plan was Voyage AI, which offers 200 million free tokens on its cur
 ```sql
 ORDER BY embedding <=> :new_embedding LIMIT 3
 ```
-scoped to the same user and to submissions that already completed, retrieving that user's most semantically similar past mistakes. Those are injected into the LLM prompt with an explicit instruction: if the new submission reflects the same root cause as a retrieved one, the model's note must begin with the literal phrase "This is a recurring pattern:" and name which prior problem(s) match; if the new submission is genuinely unrelated, it should say nothing about history at all. This was tested deliberately with both matching and non-matching cases to confirm the instruction is followed in both directions, not just the positive case.
+scoped to the same user and to submissions that already completed, retrieving that user's most semantically similar past mistakes. Those are injected into the LLM prompt with an explicit instruction: if the new submission reflects the same root cause as a retrieved one, the model's note must begin with the literal phrase "This is a recurring pattern:" and name which prior problem(s) match; if the new submission is genuinely unrelated, it should say nothing about history at all. This was tested deliberately with both matching and non-matching cases, both locally and against the deployed production database, to confirm the instruction is followed in both directions, not just the positive case.
 
 **What was not done:** a formal evaluation harness (a hand-labeled set of wrong-solution examples with known-correct categories, run through the pipeline to measure categorization accuracy) was planned but deliberately deferred. This is disclosed here rather than implied to exist. The retrieval and prompt-injection mechanism was verified to work correctly through targeted manual testing (confirming it fires on genuine repeats and stays silent on unrelated mistakes), which is real evidence of correctness for the specific cases tested, but is not the same as a systematic accuracy measurement across a broader set.
 
@@ -160,7 +167,25 @@ scoped to the same user and to submissions that already completed, retrieving th
 
 ### Fail-loud on missing JWT secret in production, silent fallback in development
 
-`JWT_SECRET` has a hardcoded development fallback so the app runs locally with zero configuration. In production (`ENVIRONMENT=production`), the app refuses to start at all if the real secret is not set via environment variable, rather than silently signing tokens with a publicly known default. This is a deliberate asymmetry: convenience locally, safety in production, decided by an explicit environment flag rather than trying to guess.
+`JWT_SECRET` has a hardcoded development fallback so the app runs locally with zero configuration. In production (`ENVIRONMENT=production`), the app refuses to start at all if the real secret is not set via environment variable, rather than silently signing tokens with a publicly known default. This is a deliberate asymmetry: convenience locally, safety in production, decided by an explicit environment flag rather than trying to guess. The same environment-variable-with-local-fallback pattern is also used for `DATABASE_URL`, so the app connects to a local Docker Postgres by default and to the deployed Supabase instance only when explicitly configured to.
+
+## Deployment
+
+The app is deployed across three independent free-tier providers, chosen separately for what each is actually good at, rather than one platform for everything.
+
+- **Database**: Supabase (PostgreSQL with pgvector enabled by default).
+- **API and worker**: two separate Render services, both running from the same repository.
+- **Frontend**: Render Static Site, serving the plain HTML/CSS/JS files directly with no build step.
+
+### A real connectivity issue worth documenting
+
+Supabase's direct database connection host (`db.[project-ref].supabase.co`) resolves only to an IPv6 address unless the project has a paid IPv4 add-on. Many networks, including the one this project was deployed from, do not have working outbound IPv6 routing, which caused connections to silently fail or, more confusingly, caused a local Alembic environment variable override to appear to have no effect (it was actually still connecting to a local database the whole time the override wasn't correctly wired up, a separate bug found during the same debugging session).
+
+The fix used here is Supabase's session pooler connection string (a different host, `aws-0-[region].pooler.supabase.com`, port `5432`), which resolves over IPv4 and avoids the issue entirely. This is distinct from Supabase's transaction pooler (port `6543`), which uses per-transaction connection rotation that conflicts with asyncpg's prepared statement caching and would need `statement_cache_size=0` set explicitly to work; the session pooler holds one stable connection per client for the session's duration, which does not have that conflict. Both the IPv6 issue and the pooler-mode distinction are documented here because they cost real debugging time and are easy to hit again on a similar stack.
+
+### Environment variables set identically on both Render services
+
+Both the API and worker services need the same five variables, since the worker independently connects to the database and calls the same external APIs the API service does. See [Environment variables](#environment-variables) below for the full list.
 
 ## Known limitations
 
@@ -169,7 +194,8 @@ scoped to the same user and to submissions that already completed, retrieving th
 - Comma-separated topic tags do not scale to large tag vocabularies efficiently.
 - Cohere's free-tier embedding key is not production-licensed and is capped at 1,000 calls/month; a real deployment beyond demo/portfolio use would need a paid key or a different provider.
 - The background queue (Postgres polling) does not scale to high submission throughput; a real message broker would be needed well before that point.
-- Refresh cookie `secure`/`samesite` flags are environment-conditional but have not been tested against a real HTTPS deployment yet, only reasoned about.
+- Render's free tier spins down both services after a period of inactivity; the first request after idle time takes 20-30 seconds to respond while the service cold-starts.
+- Refresh cookie `secure`/`samesite` flags are environment-conditional and have been exercised against the real deployed HTTPS environment, but not under adversarial or high-concurrency conditions.
 
 ## Local setup
 
@@ -198,16 +224,17 @@ uvicorn main:app --reload
 python worker.py
 ```
 
-Serve the frontend separately (any static file server; e.g. `python -m http.server 5500` from the `frontend/` directory).
+Serve the frontend separately (any static file server; e.g. `python -m http.server 5500` from the `frontend/` directory). Locally, `DATABASE_URL` does not need to be set; the app falls back to the local Docker Postgres instance automatically.
 
 ## Environment variables
 
 | Variable | Required | Purpose |
 |---|---|---|
+| `DATABASE_URL` | Required in production; falls back to local Docker Postgres if unset | Connection string for the Postgres database. In production, use Supabase's session pooler string (port 5432), not the direct connection host or the transaction pooler. |
 | `JWT_SECRET` | Required in production; has a dev fallback locally | Signs access/refresh tokens |
 | `GROQ_API_KEY` | Yes | LLM gap diagnosis |
 | `COHERE_API_KEY` | Yes | Embedding generation |
-| `ENVIRONMENT` | No, defaults to `development` | Set to `production` to enforce `JWT_SECRET` and strict cookie flags |
+| `ENVIRONMENT` | No, defaults to `development` | Set to `production` to enforce `JWT_SECRET`, strict cookie flags, and disable verbose SQL logging |
 
 ## Possible future work
 
